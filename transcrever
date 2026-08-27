@@ -1,0 +1,124 @@
+#!/bin/bash
+# transcrever — Whisper + identificacao de locutores, otimizado pro Mac.
+#
+# uso:  transcrever <arquivo de audio ou video> [modelo] [--falantes N]
+# ex:   transcrever ~/Downloads/mentoria.mp4
+#       transcrever ~/Downloads/podcast.mp3 medium
+#       transcrever ~/Downloads/call.m4a large-v3 --falantes 2
+#
+# modelos (qualidade -> velocidade):
+#   large-v3 (padrao, melhor)  |  medium (2x mais rapido)  |  small (rascunho)
+#
+# gera .txt (legivel, com [SPEAKER_00]/[SPEAKER_01]), .srt (legenda) e .json
+# na mesma pasta do arquivo de entrada, mais um "(roteiro).txt" consolidado.
+
+set -euo pipefail
+
+# ---------------------------------------------------------------------------
+# ffmpeg: a diarizacao (separacao de locutores) roda em cima do torchcodec,
+# que so suporta ffmpeg 4-7. Se o ffmpeg do sistema for a versao 8, a
+# separacao quebra. A solucao e instalar a 7 em paralelo:
+#     brew install ffmpeg@7
+# e apontar pra ela, o que este bloco faz sozinho quando ela existe.
+# ---------------------------------------------------------------------------
+for FFDIR in /opt/homebrew/opt/ffmpeg@7 /usr/local/opt/ffmpeg@7; do
+  if [ -d "$FFDIR/bin" ]; then
+    export PATH="$FFDIR/bin:$PATH"
+    export DYLD_FALLBACK_LIBRARY_PATH="$FFDIR/lib:${DYLD_FALLBACK_LIBRARY_PATH:-}"
+    break
+  fi
+done
+
+ARQ="${1:-}"
+MODELO="${2:-large-v3}"
+
+# --falantes N (opcional): fixa o numero de vozes quando voce ja sabe.
+# Deixa a separacao bem mais precisa — use sempre que souber.
+FALANTES=""
+for ((i=1;i<=$#;i++)); do
+  if [ "${!i}" = "--falantes" ]; then j=$((i+1)); FALANTES="${!j:-}"; fi
+done
+
+if [ -z "$ARQ" ] || [ ! -f "$ARQ" ]; then
+  echo "uso: transcrever <arquivo de audio ou video> [modelo] [--falantes N]"
+  echo "ex:  transcrever ~/Downloads/mentoria.mp4"
+  exit 1
+fi
+
+# ---------------------------------------------------------------------------
+# Token do Hugging Face — necessario SO pra separar os locutores.
+# Sem ele o Whisper transcreve normalmente, mas entrega texto corrido.
+#
+# Como conseguir (gratuito):
+#   1. huggingface.co/settings/tokens  -> criar token de leitura
+#   2. aceitar os termos em:
+#      huggingface.co/pyannote/speaker-diarization-community-1
+#   3. exportar no seu shell:
+#      echo 'export HF_TOKEN=hf_xxxxx' >> ~/.zshrc && source ~/.zshrc
+#
+# Nunca escreva o token dentro deste arquivo — ele passa por variavel
+# de ambiente justamente pra nao vazar em repositorio.
+# ---------------------------------------------------------------------------
+HF_TOKEN="${HF_TOKEN:-}"
+
+if [ -z "$HF_TOKEN" ]; then
+  echo "Token do Hugging Face nao encontrado na variavel HF_TOKEN."
+  echo "Sem ele a transcricao funciona, mas NAO separa os locutores."
+  echo
+  echo "Pra ativar a separacao:"
+  echo "  1. crie um token em huggingface.co/settings/tokens"
+  echo "  2. aceite os termos em huggingface.co/pyannote/speaker-diarization-community-1"
+  echo "  3. export HF_TOKEN=hf_xxxxx"
+  echo
+  read -r -p "Transcrever agora mesmo SEM identificar os locutores? [s/N] " resp
+  case "${resp:-N}" in
+    s|S) DIARIZE="" ;;
+    *) exit 1 ;;
+  esac
+else
+  DIARIZE="--diarize --hf_token $HF_TOKEN"
+fi
+
+OUTDIR=$(dirname "$ARQ")
+NOME=$(basename "$ARQ")
+
+echo "Transcrevendo: $NOME"
+echo "  modelo: $MODELO${DIARIZE:+ | identificando locutores}${FALANTES:+ | $FALANTES falantes}"
+echo "  saida:  $OUTDIR/"
+echo
+
+SPK=""
+[ -n "$FALANTES" ] && SPK="--min_speakers $FALANTES --max_speakers $FALANTES"
+
+# shellcheck disable=SC2086
+whisperx "$ARQ" \
+  --language pt \
+  --model "$MODELO" \
+  --compute_type int8 \
+  --output_format all \
+  --output_dir "$OUTDIR" \
+  --print_progress True \
+  $DIARIZE $SPK
+
+BASE="${NOME%.*}"
+
+# Gera o documento consolidado (falas agrupadas por locutor) a partir do .json.
+# O consolidar-transcricao fica na mesma pasta deste script.
+AQUI="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "$OUTDIR/$BASE.json" ]; then
+  if command -v consolidar-transcricao >/dev/null 2>&1; then
+    python3 "$(command -v consolidar-transcricao)" "$OUTDIR/$BASE.json" >/dev/null 2>&1 || true
+  elif [ -f "$AQUI/consolidar-transcricao" ]; then
+    python3 "$AQUI/consolidar-transcricao" "$OUTDIR/$BASE.json" >/dev/null 2>&1 || true
+  fi
+fi
+
+echo
+echo "Pronto. Arquivos em: $OUTDIR"
+echo "  - $BASE (roteiro).txt   <- consolidado por locutor, o principal"
+echo "  - $BASE.txt / .srt / .vtt / .json / .tsv"
+if [ -f "$OUTDIR/$BASE (roteiro).txt" ]; then
+  echo
+  echo "-- previa --"
+  head -8 "$OUTDIR/$BASE (roteiro).txt"
+fi

@@ -1,0 +1,51 @@
+#!/usr/bin/env python3
+# consolidar-transcricao — transforma o .json do whisperx num documento unico,
+# legivel, agrupando falas consecutivas do mesmo locutor (estilo roteiro de entrevista).
+# uso: consolidar-transcricao "caminho/arquivo.json"  ->  gera "arquivo (roteiro).txt"
+import json, sys, os
+
+def mmss(s):
+    s = int(s or 0)
+    return f"{s//60:02d}:{s%60:02d}"
+
+def main():
+    if len(sys.argv) < 2:
+        print("uso: consolidar-transcricao <arquivo.json>"); sys.exit(1)
+    jpath = sys.argv[1]
+    d = json.load(open(jpath, encoding="utf-8"))
+    segs = d.get("segments", [])
+    if not segs:
+        print("sem segmentos no json"); sys.exit(1)
+
+    # agrupa falas consecutivas do mesmo locutor num bloco so
+    blocos = []
+    for s in segs:
+        spk = s.get("speaker", "SPEAKER_?")
+        txt = (s.get("text") or "").strip()
+        if not txt:
+            continue
+        if blocos and blocos[-1]["spk"] == spk:
+            blocos[-1]["txt"] += " " + txt
+            blocos[-1]["fim"] = s.get("end", blocos[-1]["fim"])
+        else:
+            blocos.append({"spk": spk, "txt": txt, "ini": s.get("start", 0), "fim": s.get("end", 0)})
+
+    locutores = sorted({b["spk"] for b in blocos})
+    base = os.path.splitext(os.path.basename(jpath))[0]
+
+    linhas = []
+    linhas.append(f"TRANSCRIÇÃO — {base}")
+    linhas.append(f"Locutores detectados: {len(locutores)} ({', '.join(locutores)})")
+    linhas.append("─" * 60)
+    linhas.append("")
+    for b in blocos:
+        linhas.append(f"[{mmss(b['ini'])}] {b['spk']}")
+        linhas.append(b["txt"])
+        linhas.append("")
+
+    out = os.path.join(os.path.dirname(jpath), f"{base} (roteiro).txt")
+    open(out, "w", encoding="utf-8").write("\n".join(linhas))
+    print(out)
+
+if __name__ == "__main__":
+    main()
