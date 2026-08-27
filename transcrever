@@ -1,5 +1,5 @@
 #!/bin/bash
-# transcrever — Whisper + identificacao de locutores, otimizado pro Mac.
+# transcrever — Whisper + identificacao de locutores, otimizado para o Mac.
 #
 # uso:  transcrever <arquivo de audio ou video> [modelo] [--falantes N]
 # ex:   transcrever ~/Downloads/mentoria.mp4
@@ -19,7 +19,7 @@ set -euo pipefail
 # que so suporta ffmpeg 4-7. Se o ffmpeg do sistema for a versao 8, a
 # separacao quebra. A solucao e instalar a 7 em paralelo:
 #     brew install ffmpeg@7
-# e apontar pra ela, o que este bloco faz sozinho quando ela existe.
+# e apontar para ela, o que este bloco faz sozinho quando ela existe.
 # ---------------------------------------------------------------------------
 for FFDIR in /opt/homebrew/opt/ffmpeg@7 /usr/local/opt/ffmpeg@7; do
   if [ -d "$FFDIR/bin" ]; then
@@ -46,7 +46,7 @@ if [ -z "$ARQ" ] || [ ! -f "$ARQ" ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# Token do Hugging Face — necessario SO pra separar os locutores.
+# Token do Hugging Face — necessario SO para separar os locutores.
 # Sem ele o Whisper transcreve normalmente, mas entrega texto corrido.
 #
 # Como conseguir (gratuito):
@@ -57,7 +57,7 @@ fi
 #      echo 'export HF_TOKEN=hf_xxxxx' >> ~/.zshrc && source ~/.zshrc
 #
 # Nunca escreva o token dentro deste arquivo — ele passa por variavel
-# de ambiente justamente pra nao vazar em repositorio.
+# de ambiente justamente para nao vazar em repositorio.
 # ---------------------------------------------------------------------------
 HF_TOKEN="${HF_TOKEN:-}"
 
@@ -65,7 +65,7 @@ if [ -z "$HF_TOKEN" ]; then
   echo "Token do Hugging Face nao encontrado na variavel HF_TOKEN."
   echo "Sem ele a transcricao funciona, mas NAO separa os locutores."
   echo
-  echo "Pra ativar a separacao:"
+  echo "Para ativar a separacao:"
   echo "  1. crie um token em huggingface.co/settings/tokens"
   echo "  2. aceite os termos em huggingface.co/pyannote/speaker-diarization-community-1"
   echo "  3. export HF_TOKEN=hf_xxxxx"
